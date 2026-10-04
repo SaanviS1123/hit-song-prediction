@@ -1,19 +1,18 @@
-
 import os
+import joblib
 import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
 
-from sklearn.metrics import confusion_matrix
-from sklearn.model_selection import train_test_split
-from sklearn.pipeline import Pipeline
-from sklearn.preprocessing import StandardScaler
-from sklearn.decomposition import PCA
+from sklearn.metrics import (
+    confusion_matrix,
+    accuracy_score,
+    precision_score,
+    recall_score,
+    f1_score
+)
 
-from sklearn.linear_model import LogisticRegression
-from sklearn.svm import SVC
-from sklearn.ensemble import RandomForestClassifier
-from sklearn.neighbors import KNeighborsClassifier
+from sklearn.model_selection import train_test_split
 
 from src.ml.data_loader import load_dataset
 
@@ -22,16 +21,14 @@ def evaluate_models():
 
     print("\n========== MODEL EVALUATION ==========")
 
+    # Create output directories
     os.makedirs("results/plots", exist_ok=True)
     os.makedirs("results/confusion_matrices", exist_ok=True)
 
-    # Load dataset
+    # Load original dataset
     X, y, df = load_dataset()
 
-    # Remove constant features
-    X = X.loc[:, X.nunique() > 1]
-
-    # Same train-test split as training
+    # Use the same train-test split as model training
     X_train, X_test, y_train, y_test = train_test_split(
         X,
         y,
@@ -40,44 +37,58 @@ def evaluate_models():
         stratify=y
     )
 
-    models = {
-        "Logistic Regression": LogisticRegression(
-            max_iter=2000,
-            class_weight="balanced"
-        ),
-
-        "SVM": SVC(
-            kernel="rbf",
-            class_weight="balanced"
-        ),
-
-        "Random Forest": RandomForestClassifier(
-            n_estimators=200,
-            random_state=42,
-            class_weight="balanced"
-        ),
-
-        "KNN": KNeighborsClassifier(
-            n_neighbors=3
-        )
+    # Paths to saved trained models
+    model_files = {
+        "Logistic Regression": "models/logistic_regression.pkl",
+        "SVM": "models/svm.pkl",
+        "Random Forest": "models/random_forest.pkl",
+        "KNN": "models/knn.pkl"
     }
 
     results = []
 
-    for name, model in models.items():
+    for name, model_path in model_files.items():
 
-        print("\nEvaluating:", name)
+        print(f"\nEvaluating: {name}")
 
-        pipeline = Pipeline([
-            ("scaler", StandardScaler()),
-            ("pca", PCA(n_components=0.95)),
-            ("classifier", model)
-        ])
+        # Check whether the trained model exists
+        if not os.path.exists(model_path):
+            print(f"Model file not found: {model_path}")
+            continue
 
-        pipeline.fit(X_train, y_train)
+        # Load the exact trained pipeline
+        pipeline = joblib.load(model_path)
 
+        # Predict using the held-out test data
         predictions = pipeline.predict(X_test)
 
+        # Calculate evaluation metrics
+        accuracy = accuracy_score(y_test, predictions)
+
+        precision = precision_score(
+            y_test,
+            predictions,
+            zero_division=0
+        )
+
+        recall = recall_score(
+            y_test,
+            predictions,
+            zero_division=0
+        )
+
+        f1 = f1_score(
+            y_test,
+            predictions,
+            zero_division=0
+        )
+
+        print("Accuracy:", round(accuracy, 4))
+        print("Precision:", round(precision, 4))
+        print("Recall:", round(recall, 4))
+        print("F1 Score:", round(f1, 4))
+
+        # Generate confusion matrix
         cm = confusion_matrix(
             y_test,
             predictions,
@@ -110,27 +121,28 @@ def evaluate_models():
 
         plt.close()
 
+        # Store results
         results.append({
             "Model": name,
+            "Accuracy": accuracy,
+            "Precision": precision,
+            "Recall": recall,
+            "F1 Score": f1,
             "True Negative": cm[0, 0],
             "False Positive": cm[0, 1],
             "False Negative": cm[1, 0],
             "True Positive": cm[1, 1]
         })
 
-    # Save confusion matrix values
-    cm_df = pd.DataFrame(results)
+    # Save evaluation results
+    results_df = pd.DataFrame(results)
 
-    cm_df.to_csv(
-        "results/confusion_matrices/confusion_matrix_values.csv",
+    results_df.to_csv(
+        "results/evaluation_results.csv",
         index=False
     )
 
-    # Model comparison chart
-    comparison = pd.read_csv(
-        "results/model_comparison.csv"
-    )
-
+    # Plot model comparison
     metrics = [
         "Accuracy",
         "Precision",
@@ -138,7 +150,7 @@ def evaluate_models():
         "F1 Score"
     ]
 
-    comparison.set_index("Model")[metrics].plot(
+    results_df.set_index("Model")[metrics].plot(
         kind="bar",
         figsize=(11, 6)
     )
@@ -158,6 +170,7 @@ def evaluate_models():
     plt.close()
 
     print("\nEvaluation completed!")
+    print("Evaluation results saved to results/evaluation_results.csv")
     print("Confusion matrices saved.")
     print("Model comparison graph saved.")
 
