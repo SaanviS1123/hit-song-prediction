@@ -1,0 +1,5 @@
+Model,True Negative,False Positive,False Negative,True Positive
+Logistic Regression,2,3,2,3
+SVM,3,2,2,3
+Random Forest,3,2,2,3
+KNN,2,3,1,4
