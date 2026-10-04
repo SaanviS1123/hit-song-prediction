@@ -3,6 +3,8 @@ import os
 import numpy as np
 import pandas as pd
 
+from sklearn.feature_selection import VarianceThreshold
+
 from sklearn.model_selection import (
     train_test_split,
     StratifiedKFold,
@@ -37,9 +39,6 @@ def train_models():
 
     # Load original dataset
     X, y, df = load_dataset()
-
-    # Remove constant features
-    X = X.loc[:, X.nunique() > 1]
 
     # Train-test split
     X_train, X_test, y_train, y_test = train_test_split(
@@ -84,6 +83,7 @@ def train_models():
 
         # Preprocessing inside pipeline prevents data leakage
         pipeline = Pipeline([
+            ("feature_selection", VarianceThreshold(threshold=0)),
             ("scaler", StandardScaler()),
             ("pca", PCA(n_components=0.95)),
             ("classifier", model)
