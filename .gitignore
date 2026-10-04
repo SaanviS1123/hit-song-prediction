@@ -1,0 +1,4 @@
+data/raw/*.wav
+data/chorus/*.wav
+venv/
+__pycache__/
