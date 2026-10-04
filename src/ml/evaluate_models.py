@@ -2,14 +2,15 @@ import os
 import joblib
 import pandas as pd
 import matplotlib.pyplot as plt
-import seaborn as sns
 
 from sklearn.metrics import (
     confusion_matrix,
     accuracy_score,
     precision_score,
     recall_score,
-    f1_score
+    f1_score,
+    roc_auc_score,
+    roc_curve
 )
 
 from sklearn.model_selection import train_test_split
@@ -21,14 +22,13 @@ def evaluate_models():
 
     print("\n========== MODEL EVALUATION ==========")
 
-    # Create output directories
     os.makedirs("results/plots", exist_ok=True)
     os.makedirs("results/confusion_matrices", exist_ok=True)
 
-    # Load original dataset
+    # Load dataset
     X, y, df = load_dataset()
 
-    # Use the same train-test split as model training
+    # Reproduce the same test split used during training
     X_train, X_test, y_train, y_test = train_test_split(
         X,
         y,
@@ -37,7 +37,6 @@ def evaluate_models():
         stratify=y
     )
 
-    # Paths to saved trained models
     model_files = {
         "Logistic Regression": "models/logistic_regression.pkl",
         "SVM": "models/svm.pkl",
@@ -47,56 +46,60 @@ def evaluate_models():
 
     results = []
 
+    # ROC curve
+    plt.figure(figsize=(8, 6))
+
     for name, model_path in model_files.items():
 
         print(f"\nEvaluating: {name}")
 
-        # Check whether the trained model exists
         if not os.path.exists(model_path):
-            print(f"Model file not found: {model_path}")
+            print(f"Model not found: {model_path}")
             continue
 
-        # Load the exact trained pipeline
+        # Load saved trained pipeline
         pipeline = joblib.load(model_path)
 
-        # Predict using the held-out test data
         predictions = pipeline.predict(X_test)
 
-        # Calculate evaluation metrics
+        # Obtain prediction scores for ROC-AUC
+        if hasattr(pipeline, "predict_proba"):
+            scores = pipeline.predict_proba(X_test)[:, 1]
+        else:
+            scores = pipeline.decision_function(X_test)
+
+        # Calculate metrics
         accuracy = accuracy_score(y_test, predictions)
-
         precision = precision_score(
-            y_test,
-            predictions,
-            zero_division=0
+            y_test, predictions, zero_division=0
         )
-
         recall = recall_score(
-            y_test,
-            predictions,
-            zero_division=0
+            y_test, predictions, zero_division=0
+        )
+        f1 = f1_score(
+            y_test, predictions, zero_division=0
         )
 
-        f1 = f1_score(
-            y_test,
-            predictions,
-            zero_division=0
-        )
+        roc_auc = roc_auc_score(y_test, scores)
 
         print("Accuracy:", round(accuracy, 4))
         print("Precision:", round(precision, 4))
         print("Recall:", round(recall, 4))
         print("F1 Score:", round(f1, 4))
+        print("ROC-AUC:", round(roc_auc, 4))
 
-        # Generate confusion matrix
+        # Confusion matrix
         cm = confusion_matrix(
             y_test,
             predictions,
             labels=[0, 1]
         )
 
-        # Plot confusion matrix
+        filename = name.lower().replace(" ", "_")
+
         plt.figure(figsize=(6, 5))
+
+        import seaborn as sns
 
         sns.heatmap(
             cm,
@@ -110,9 +113,6 @@ def evaluate_models():
         plt.title(f"{name} Confusion Matrix")
         plt.xlabel("Predicted Label")
         plt.ylabel("Actual Label")
-
-        filename = name.lower().replace(" ", "_")
-
         plt.tight_layout()
 
         plt.savefig(
@@ -121,6 +121,16 @@ def evaluate_models():
 
         plt.close()
 
+        # ROC curve
+        fpr, tpr, thresholds = roc_curve(y_test, scores)
+
+        plt.figure(1)
+        plt.plot(
+            fpr,
+            tpr,
+            label=f"{name} (AUC = {roc_auc:.3f})"
+        )
+
         # Store results
         results.append({
             "Model": name,
@@ -128,11 +138,30 @@ def evaluate_models():
             "Precision": precision,
             "Recall": recall,
             "F1 Score": f1,
+            "ROC-AUC": roc_auc,
             "True Negative": cm[0, 0],
             "False Positive": cm[0, 1],
             "False Negative": cm[1, 0],
             "True Positive": cm[1, 1]
         })
+
+    # Finish ROC curve
+    plt.figure(1)
+    plt.plot(
+        [0, 1],
+        [0, 1],
+        linestyle="--",
+        label="Random Classifier"
+    )
+
+    plt.xlabel("False Positive Rate")
+    plt.ylabel("True Positive Rate")
+    plt.title("ROC Curve Comparison")
+    plt.legend(loc="lower right")
+    plt.tight_layout()
+
+    plt.savefig("results/plots/roc_curve.png")
+    plt.close()
 
     # Save evaluation results
     results_df = pd.DataFrame(results)
@@ -142,12 +171,13 @@ def evaluate_models():
         index=False
     )
 
-    # Plot model comparison
+    # Model comparison chart
     metrics = [
         "Accuracy",
         "Precision",
         "Recall",
-        "F1 Score"
+        "F1 Score",
+        "ROC-AUC"
     ]
 
     results_df.set_index("Model")[metrics].plot(
@@ -163,14 +193,12 @@ def evaluate_models():
     plt.legend(loc="lower right")
     plt.tight_layout()
 
-    plt.savefig(
-        "results/plots/model_comparison.png"
-    )
-
+    plt.savefig("results/plots/model_comparison.png")
     plt.close()
 
     print("\nEvaluation completed!")
-    print("Evaluation results saved to results/evaluation_results.csv")
+    print("ROC-AUC results saved.")
+    print("ROC curve saved.")
     print("Confusion matrices saved.")
     print("Model comparison graph saved.")
 
